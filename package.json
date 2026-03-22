@@ -6,12 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "seed": "ts-node src/lib/db/seed.ts"
   },
   "dependencies": {
     "next": "14.2.0",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "mongoose": "^7.5.0",
+    "bcryptjs": "^2.4.3"
   },
   "devDependencies": {
     "@types/node": "^20",
