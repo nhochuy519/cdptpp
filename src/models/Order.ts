@@ -170,12 +170,12 @@ const orderSchema = new mongoose.Schema(
 orderSchema.pre('save', function (next) {
   if (this.isModified('orderStatus')) {
     if (!this.orderTimeline) {
-      this.orderTimeline = []
+      this.orderTimeline = [] as any
     }
     this.orderTimeline.push({
       status: this.orderStatus,
       timestamp: new Date(),
-    })
+    } as any)
   }
   next()
 })
