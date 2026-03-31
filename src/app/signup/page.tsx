@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useAuth } from "@/app/providers";
 
 export default function SignupPage() {
   const [formData, setFormData] = useState({
@@ -16,6 +17,7 @@ export default function SignupPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [agreed, setAgreed] = useState(false);
+  const { signup } = useAuth();
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -62,12 +64,15 @@ export default function SignupPage() {
     if (!validateForm()) return;
 
     setIsLoading(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setIsLoading(false);
-
-    // Redirect to login or account page on success
-    window.location.href = "/account";
+    try {
+      const fullName = `${formData.firstName} ${formData.lastName}`.trim();
+      await signup(fullName, formData.email, formData.password, formData.phone);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Đăng ký thất bại";
+      setErrors((prev) => ({ ...prev, submit: message }));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -125,6 +130,13 @@ export default function SignupPage() {
                 Tạo tài khoản mới để bắt đầu mua sắm với những lợi ích đặc biệt.
               </p>
             </div>
+
+            {/* Error Message */}
+            {errors.submit && (
+              <div className="mb-6 p-4 bg-error-container/20 border border-error rounded-btn">
+                <p className="text-error text-sm">{errors.submit}</p>
+              </div>
+            )}
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-5">

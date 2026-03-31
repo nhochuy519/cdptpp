@@ -105,8 +105,13 @@ const orderSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
       index: true,
+    },
+    guestInfo: {
+      sessionId: String,
+      fullName: String,
+      email: String,
+      phone: String,
     },
     items: {
       type: [orderItemSchema],
@@ -118,12 +123,12 @@ const orderSchema = new mongoose.Schema(
       },
     },
     shippingAddress: {
-      type: shippingAddressSchema,
+      type: String,
       required: true,
     },
     paymentMethod: {
       type: String,
-      enum: ['COD', 'bank_transfer', 'e_wallet', 'credit_card'],
+      enum: ['cod', 'bank_transfer', 'momo', 'zalopay', 'card'],
       required: true,
     },
     paymentStatus: {
@@ -147,7 +152,7 @@ const orderSchema = new mongoose.Schema(
     },
     shippingCost: {
       type: Number,
-      default: 30000,
+      default: 0,
     },
     taxAmount: {
       type: Number,
@@ -158,6 +163,7 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    note: String,
     notes: String,
     internalNotes: String,
     tracking: trackingSchema,

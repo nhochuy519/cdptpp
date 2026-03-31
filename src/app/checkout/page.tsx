@@ -1,28 +1,188 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
-import { products, formatPrice } from '@/lib/data'
+import { formatPrice } from '@/lib/data'
+import { useAuth } from '@/app/providers'
+
+export const dynamic = 'force-dynamic'
 
 const steps = ['Giỏ hàng', 'Giao hàng', 'Thanh toán', 'Xác nhận']
-const provinces = ['TP. Hồ Chí Minh', 'Hà Nội', 'Đà Nẵng', 'Cần Thơ', 'Biên Hòa']
+const provinces = [
+  { name: 'TP. Hồ Chí Minh', districts: ['Quận 1', 'Quận 2', 'Quận 3', 'Quận 4', 'Quận 5', 'Quận 6', 'Quận 7', 'Quận 8', 'Quận 9', 'Quận 10', 'Quận 11', 'Quận 12', 'Thủ Đức', 'Gò Vấp', 'Bình Thạnh', 'Tân Bình', 'Tân Phú', 'Từ Liêm'] },
+  { name: 'Hà Nội', districts: ['Ba Đình', 'Hoàn Kiếm', 'Tây Hồ', 'Long Biên', 'Thanh Trì', 'Sơn Tây', 'Mỹ Đức'] },
+  { name: 'Đà Nẵng', districts: ['Hải Châu', 'Thanh Khê', 'Sơn Trà', 'Ngũ Hành Sơn', 'Liên Chiểu'] },
+  { name: 'Cần Thơ', districts: ['Ninh Kiều', 'Bình Thủy', 'Cái Răng', 'Phong Điền', 'Cờ Đỏ'] },
+  { name: 'Biên Hòa', districts: ['Thành phố Biên Hòa', 'Tân Phú', 'Long Thạnh', 'Nhơn Trạch'] },
+]
+const wards = ['Phường 1', 'Phường 2', 'Phường 3', 'Phường 4', 'Phường 5', 'Phường 6', 'Phường 7', 'Phường 8', 'Phường 9', 'Phường 10']
 const paymentMethods = [
   { id: 'cod', label: 'Thanh toán khi nhận hàng (COD)', icon: '🏠' },
-  { id: 'bank', label: 'Chuyển khoản ngân hàng', icon: '🏦' },
-  { id: 'momo', label: 'Ví MoMo', icon: '💜' },
-  { id: 'zalopay', label: 'ZaloPay', icon: '💙' },
-  { id: 'card', label: 'Thẻ tín dụng / Ghi nợ', icon: '💳' },
+  // { id: 'bank', label: 'Chuyển khoản ngân hàng', icon: '🏦' },
+  // { id: 'momo', label: 'Ví MoMo', icon: '💜' },
+  // { id: 'zalopay', label: 'ZaloPay', icon: '💙' },
+  // { id: 'card', label: 'Thẻ tín dụng / Ghi nợ', icon: '💳' },
 ]
 
 export default function CheckoutPage() {
+  const router = useRouter()
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth()
   const [currentStep] = useState(1)
   const [paymentMethod, setPaymentMethod] = useState('cod')
   const [delivery, setDelivery] = useState('standard')
+  const [selectedProvince, setSelectedProvince] = useState('')
+  const [selectedDistrict, setSelectedDistrict] = useState('')
+  const [selectedWard, setSelectedWard] = useState('')
+  const [districts, setDistricts] = useState<string[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  
+  // Form states
+  const [fullName, setFullName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [address, setAddress] = useState('')
+  const [note, setNote] = useState('')
 
-  const cartItems = products.slice(0, 3)
-  const subtotal = cartItems.reduce((s, p) => s + p.price, 0)
+  // Cart states
+  const [cartItems, setCartItems] = useState<any[]>([])
+  const [cartLoading, setCartLoading] = useState(true)
+
+  // Fetch cart on mount
+  useEffect(() => {
+    const fetchCart = async () => {
+      try {
+        if (authLoading) {
+          return
+        }
+
+        setCartLoading(true)
+
+        if (!isAuthenticated || !user?.id) {
+          router.push('/login?redirect=/checkout')
+          return
+        }
+
+        const res = await fetch(`/api/cart?userId=${user.id}`)
+        const data = await res.json()
+        
+        if (data.data?.items) {
+          setCartItems(data.data.items)
+        }
+      } catch (error) {
+        console.error('Failed to fetch cart:', error)
+      } finally {
+        setCartLoading(false)
+      }
+    }
+
+    fetchCart()
+  }, [authLoading, isAuthenticated, user?.id, router])
+
+  const handleProvinceChange = (provinceName: string) => {
+    setSelectedProvince(provinceName)
+    const province = provinces.find(p => p.name === provinceName)
+    setDistricts(province?.districts || [])
+    setSelectedDistrict('')
+    setSelectedWard('')
+  }
+
+  const handleDistrictChange = (district: string) => {
+    setSelectedDistrict(district)
+    setSelectedWard('')
+  }
+
+  const handleOrder = async () => {
+    // Validation
+    if (!fullName.trim() || !phone.trim() || !selectedProvince || !selectedDistrict || !selectedWard || !address.trim()) {
+      alert('Vui lòng điền đầy đủ thông tin')
+      return
+    }
+
+    if (authLoading) {
+      return
+    }
+
+    if (!isAuthenticated || !user?.id) {
+      alert('Bạn cần đăng nhập để đặt hàng')
+      router.push('/login?redirect=/checkout')
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      // Get cart items from API
+      const cartRes = await fetch(`/api/cart?userId=${user.id}`)
+      const cartData = await cartRes.json()
+      
+      if (!cartData.data?.items || cartData.data.items.length === 0) {
+        alert('Giỏ hàng trống')
+        setIsLoading(false)
+        return
+      }
+
+      console.log('Cart items:', cartData.data.items)
+
+      // Create order
+      const orderRes = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          customerInfo: {
+            fullName,
+            phone,
+            email,
+            address: `${address}, ${selectedWard}, ${selectedDistrict}, ${selectedProvince}`,
+          },
+          deliveryMethod: delivery,
+          paymentMethod,
+          items: cartData.data.items,
+          note,
+        }),
+      })
+
+      const responseText = await orderRes.text()
+      console.log('Order response:', responseText)
+
+      let orderData
+      try {
+        orderData = JSON.parse(responseText)
+      } catch (e) {
+        console.error('Failed to parse response:', responseText)
+        alert('Lỗi: Không thể tạo đơn hàng. Kiểm tra console để biết chi tiết.')
+        setIsLoading(false)
+        return
+      }
+
+      if (!orderRes.ok) {
+        const errorMsg = orderData?.error || 'Tạo đơn hàng thất bại'
+        alert(`Lỗi: ${errorMsg}`)
+        setIsLoading(false)
+        return
+      }
+
+      // Clear cart after successful order
+      try {
+        await fetch(`/api/cart?userId=${user.id}`, {
+          method: 'DELETE',
+        })
+      } catch (err) {
+        console.warn('Failed to clear cart:', err)
+      }
+
+      // Redirect to order details page
+      router.push(`/order?orderId=${orderData.data?._id}`)
+    } catch (error) {
+      console.error('Order error:', error)
+      alert('Lỗi: ' + (error instanceof Error ? error.message : 'Không xác định'))
+      setIsLoading(false)
+    }
+  }
+
+  const subtotal = cartItems.reduce((s: any, item: any) => s + ((item.salePrice || item.price) * item.quantity), 0)
   const shippingFee = delivery === 'express' ? 50000 : 0
   const total = subtotal + shippingFee
 
@@ -72,15 +232,15 @@ export default function CheckoutPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="section-label mb-2 block">Họ và tên *</label>
-                    <input type="text" className="input-field" placeholder="Nguyễn Văn A" />
+                    <input type="text" className="input-field" placeholder="Nguyễn Văn A" value={fullName} onChange={(e) => setFullName(e.target.value)} />
                   </div>
                   <div>
                     <label className="section-label mb-2 block">Số điện thoại *</label>
-                    <input type="tel" className="input-field" placeholder="0901 234 567" />
+                    <input type="tel" className="input-field" placeholder="0901 234 567" value={phone} onChange={(e) => setPhone(e.target.value)} />
                   </div>
                   <div className="col-span-2">
                     <label className="section-label mb-2 block">Email</label>
-                    <input type="email" className="input-field" placeholder="email@example.com" />
+                    <input type="email" className="input-field" placeholder="email@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
                   </div>
                 </div>
               </div>
@@ -91,30 +251,32 @@ export default function CheckoutPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="section-label mb-2 block">Tỉnh / Thành phố *</label>
-                    <select className="input-field">
+                    <select className="input-field" value={selectedProvince} onChange={(e) => handleProvinceChange(e.target.value)}>
                       <option value="">Chọn tỉnh / thành phố</option>
-                      {provinces.map(p => <option key={p}>{p}</option>)}
+                      {provinces.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="section-label mb-2 block">Quận / Huyện *</label>
-                    <select className="input-field">
-                      <option>Chọn quận / huyện</option>
+                    <select className="input-field" value={selectedDistrict} onChange={(e) => handleDistrictChange(e.target.value)} disabled={!selectedProvince}>
+                      <option value="">Chọn quận / huyện</option>
+                      {districts.map(d => <option key={d} value={d}>{d}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="section-label mb-2 block">Phường / Xã *</label>
-                    <select className="input-field">
-                      <option>Chọn phường / xã</option>
+                    <select className="input-field" value={selectedWard} onChange={(e) => setSelectedWard(e.target.value)} disabled={!selectedDistrict}>
+                      <option value="">Chọn phường / xã</option>
+                      {selectedDistrict && wards.map(w => <option key={w} value={w}>{w}</option>)}
                     </select>
                   </div>
                   <div className="col-span-2">
                     <label className="section-label mb-2 block">Địa chỉ cụ thể *</label>
-                    <input type="text" className="input-field" placeholder="Số nhà, tên đường..." />
+                    <input type="text" className="input-field" placeholder="Số nhà, tên đường..." value={address} onChange={(e) => setAddress(e.target.value)} />
                   </div>
                   <div className="col-span-2">
                     <label className="section-label mb-2 block">Ghi chú đơn hàng</label>
-                    <textarea rows={3} className="input-field resize-none" placeholder="Ghi chú về đơn hàng, thời gian giao hàng..."></textarea>
+                    <textarea rows={3} className="input-field resize-none" placeholder="Ghi chú về đơn hàng, thời gian giao hàng..." value={note} onChange={(e) => setNote(e.target.value)}></textarea>
                   </div>
                 </div>
               </div>
@@ -165,7 +327,7 @@ export default function CheckoutPage() {
                       </label>
 
                       {/* Card form */}
-                      {paymentMethod === 'card' && m.id === 'card' && (
+                      {/* {paymentMethod === 'card' && m.id === 'card' && (
                         <div className="mt-3 p-5 bg-surface-low rounded-btn space-y-4">
                           <div>
                             <label className="section-label mb-2 block">Số thẻ</label>
@@ -182,7 +344,7 @@ export default function CheckoutPage() {
                             </div>
                           </div>
                         </div>
-                      )}
+                      )} */}
                     </div>
                   ))}
                 </div>
@@ -196,21 +358,39 @@ export default function CheckoutPage() {
                   Đơn hàng ({cartItems.length} sản phẩm)
                 </h2>
 
-                <div className="space-y-4 mb-5">
-                  {cartItems.map(item => (
-                    <div key={item.id} className="flex gap-3">
-                      <div className="relative w-14 h-16 flex-shrink-0 rounded overflow-hidden bg-surface-low">
-                        <Image src={item.image} alt={item.name} fill className="object-cover" />
-                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-white rounded-full text-[9px] font-bold flex items-center justify-center">1</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-display font-semibold text-xs text-[#1a1a2e] leading-snug line-clamp-2">{item.name}</p>
-                        <p className="text-on-surface-muted text-xs font-body mt-0.5">Size M · Đen</p>
-                      </div>
-                      <span className="font-display font-bold text-xs text-[#1a1a2e] flex-shrink-0">{formatPrice(item.price)}</span>
+                {cartLoading ? (
+                  <div className="text-center py-8 text-on-surface-muted">Đang tải giỏ hàng...</div>
+                ) : cartItems.length === 0 ? (
+                  <div className="text-center py-8 text-on-surface-muted">
+                    <p>Giỏ hàng trống</p>
+                    <Link href="/shop" className="text-primary hover:underline text-sm mt-2 inline-block">Tiếp tục mua sắm</Link>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-4 mb-5">
+                      {cartItems.map((item: any) => (
+                        <div key={item._id || item.productId} className="flex gap-3">
+                          {item.image && (
+                            <div className="relative w-14 h-16 flex-shrink-0 rounded overflow-hidden bg-surface-low">
+                              <Image src={item.image} alt={item.name || 'Product'} fill className="object-cover" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-display font-semibold text-xs text-[#1a1a2e] leading-snug line-clamp-2">
+                              {item.name || 'Sản phẩm'}
+                            </p>
+                            <p className="text-on-surface-muted text-xs font-body mt-0.5">
+                              {item.quantity}x · {item.size ? `Size ${item.size}` : ''} {item.color ? `· ${item.color}` : ''}
+                            </p>
+                          </div>
+                          <span className="font-display font-bold text-xs text-[#1a1a2e] flex-shrink-0">
+                            {formatPrice((item.salePrice || item.price || 0) * item.quantity)}
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </>
+                )}
 
                 <div className="space-y-2 pb-4 border-b border-surface-mid text-sm font-body">
                   <div className="flex justify-between">
@@ -230,8 +410,12 @@ export default function CheckoutPage() {
                   <span className="font-display font-black text-xl text-[#1a1a2e]">{formatPrice(total)}</span>
                 </div>
 
-                <button className="btn-primary w-full justify-center py-4 text-base">
-                  Đặt hàng ngay 🎉
+                <button 
+                  onClick={handleOrder} 
+                  disabled={isLoading}
+                  className="btn-primary w-full justify-center py-4 text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? 'Đang xử lý...' : 'Đặt hàng ngay 🎉'}
                 </button>
 
                 <div className="flex items-center justify-center gap-2 mt-4 text-xs text-on-surface-muted font-body">

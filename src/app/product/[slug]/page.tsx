@@ -1,26 +1,161 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { useParams, useRouter } from 'next/navigation'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
-import ProductCard from '@/components/ui/ProductCard'
-import { products, formatPrice } from '@/lib/data'
+import { useAuth } from '@/app/providers'
+
+interface ProductData {
+  _id: string
+  name: string
+  slug: string
+  price: number
+  salePrice?: number
+  description?: string
+  images?: Array<{ url: string; alt?: string }>
+  category?: { name: string; slug: string; _id?: string }
+  rating?: { average: number; count: number }
+}
 
 export default function ProductPage() {
-  const product = products[0] // demo with first product
+  const params = useParams()
+  const router = useRouter()
+  const slug = params.slug as string
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth()
+
+  const [product, setProduct] = useState<ProductData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [selectedSize, setSelectedSize] = useState('')
-  const [selectedColor, setSelectedColor] = useState(product.colors[0])
+  const [selectedColor, setSelectedColor] = useState('#1a1a2e')
   const [quantity, setQuantity] = useState(1)
   const [activeTab, setActiveTab] = useState('description')
-  const [mainImage, setMainImage] = useState(product.image)
+  const [mainImage, setMainImage] = useState<string>('')
+  const [addingToCart, setAddingToCart] = useState(false)
+  const [cartMessage, setCartMessage] = useState<string>('')
+
+  // Fetch product by slug
+  useEffect(() => {
+    const fetchProduct = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const response = await fetch(`${baseUrl}/api/products/slug/${slug}`, { cache: 'no-store' })
+        
+        if (!response.ok) {
+          throw new Error('Sản phẩm không tìm thấy')
+        }
+        
+        const data = await response.json()
+        
+        if (data.data) {
+          setProduct(data.data)
+          // Set initial main image
+          if (data.data.images && data.data.images.length > 0) {
+            setMainImage(data.data.images[0].url)
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching product:', err)
+        setError(err instanceof Error ? err.message : 'Không thể tải sản phẩm')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (slug) {
+      fetchProduct()
+    }
+  }, [slug, baseUrl])
+
+  const handleAddToCart = async () => {
+    if (authLoading) {
+      return
+    }
+
+    if (!isAuthenticated || !user?.id) {
+      setCartMessage('Bạn cần đăng nhập để thêm vào giỏ hàng')
+      setTimeout(() => setCartMessage(''), 2000)
+      router.push(`/login?redirect=/product/${slug}`)
+      return
+    }
+
+    try {
+      setAddingToCart(true)
+
+      const response = await fetch(`${baseUrl}/api/cart`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          productId: product?._id,
+          quantity,
+          size: 'M',
+          color: '#1a1a2e',
+        }),
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        setCartMessage('✓ Đã thêm vào giỏ hàng!')
+        setQuantity(1)
+        setTimeout(() => setCartMessage(''), 2000)
+      } else if (response.status === 401) {
+        setCartMessage('Bạn cần đăng nhập để thêm vào giỏ hàng')
+        setTimeout(() => setCartMessage(''), 2000)
+        router.push(`/login?redirect=/product/${slug}`)
+        return
+      }
+    } catch (error) {
+      console.error('Error adding to cart:', error)
+      setCartMessage('Lỗi khi thêm vào giỏ hàng')
+      setTimeout(() => setCartMessage(''), 2000)
+    } finally {
+      setAddingToCart(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <>
+        <Navbar />
+        <main className="bg-surface min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-on-surface-muted">Đang tải sản phẩm...</p>
+          </div>
+        </main>
+        <Footer />
+      </>
+    )
+  }
+
+  if (error || !product) {
+    return (
+      <>
+        <Navbar />
+        <main className="bg-surface min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-on-surface-muted mb-4">{error || 'Sản phẩm không tồn tại'}</p>
+            <Link href="/shop" className="text-primary hover:text-primary font-semibold">
+              Quay lại cửa hàng →
+            </Link>
+          </div>
+        </main>
+        <Footer />
+      </>
+    )
+  }
+
+  const discount = product.salePrice ? Math.round(((product.price - product.salePrice) / product.price) * 100) : 0
+  const images = product.images?.map(img => img.url) || [mainImage]
 
   const tabs = ['description', 'specs', 'reviews', 'qa']
   const tabLabels: Record<string, string> = {
-    description: 'Mô tả', specs: 'Thông số', reviews: `Đánh giá (${product.reviews})`, qa: 'Hỏi & Đáp'
+    description: 'Mô tả', specs: 'Thông số', reviews: `Đánh giá (${product.rating?.count || 0})`, qa: 'Hỏi & Đáp'
   }
-
-  const images = [product.image, product.imageHover, product.image, product.imageHover]
 
   return (
     <>
@@ -61,9 +196,9 @@ export default function ProductPage() {
               {/* Main Image */}
               <div className="relative flex-1 overflow-hidden rounded-btn bg-surface-low" style={{ aspectRatio: '3/4' }}>
                 <Image src={mainImage} alt={product.name} fill className="object-cover transition-all duration-500" />
-                {product.discount > 0 && (
+                {discount > 0 && (
                   <div className="absolute top-4 left-4">
-                    <span className="badge-sale text-sm px-3 py-1">-{product.discount}%</span>
+                    <span className="badge-sale text-sm px-3 py-1">-{discount}%</span>
                   </div>
                 )}
               </div>
@@ -73,7 +208,7 @@ export default function ProductPage() {
             <div className="py-2">
               <div className="flex items-center gap-3 mb-3">
                 <span className="section-label">MAISON.</span>
-                <span className="text-on-surface-muted text-xs font-body">SKU: MSN-{product.id.toString().padStart(4, '0')}</span>
+                <span className="text-on-surface-muted text-xs font-body">SKU: {product._id.slice(-4).toUpperCase()}</span>
               </div>
 
               <h1 className="font-display font-black text-[#1a1a2e] mb-4 leading-tight" style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', letterSpacing: '-0.02em' }}>
@@ -85,36 +220,36 @@ export default function ProductPage() {
                 <div className="flex gap-0.5">
                   {[1,2,3,4,5].map(s => (
                     <svg key={s} width="16" height="16" viewBox="0 0 24 24"
-                      fill={s <= Math.round(product.rating) ? '#ab2e00' : 'none'}
+                      fill={s <= Math.round(product.rating?.average || 0) ? '#ab2e00' : 'none'}
                       stroke="#ab2e00" strokeWidth="2">
                       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                     </svg>
                   ))}
                 </div>
-                <span className="font-display font-semibold text-sm text-on-surface">{product.rating}</span>
-                <span className="text-on-surface-muted text-sm font-body">({product.reviews} đánh giá)</span>
+                <span className="font-display font-semibold text-sm text-on-surface">{product.rating?.average || 0}</span>
+                <span className="text-on-surface-muted text-sm font-body">({product.rating?.count || 0} đánh giá)</span>
                 <span className="text-green-600 text-sm font-body font-medium">✓ Còn hàng</span>
               </div>
 
               {/* Price */}
               <div className="flex items-baseline gap-3 mb-6 pb-6 border-b border-surface-mid">
                 <span className="font-display font-black text-3xl text-[#1a1a2e]">
-                  {formatPrice(product.price)}
+                  {(product.salePrice || product.price).toLocaleString('vi-VN')}₫
                 </span>
-                {product.discount > 0 && (
+                {product.salePrice && (
                   <span className="font-body text-lg text-on-surface-muted line-through">
-                    {formatPrice(product.originalPrice)}
+                    {product.price.toLocaleString('vi-VN')}₫
                   </span>
                 )}
               </div>
 
-              {/* Color */}
-              <div className="mb-6">
+              {/* Color - Commented out */}
+              {/* <div className="mb-6">
                 <p className="font-display font-semibold text-sm text-[#1a1a2e] mb-3 uppercase tracking-wider">
-                  Màu sắc: <span className="text-primary font-bold">{selectedColor}</span>
+                  Màu sắc: <span className="text-primary font-bold">{selectedColor || 'Chọn màu'}</span>
                 </p>
                 <div className="flex gap-3">
-                  {product.colors.map((c, i) => (
+                  {['#1a1a2e', '#8b7355', '#c4a882', '#f5f3f3'].map((c, i) => (
                     <button
                       key={i}
                       onClick={() => setSelectedColor(c)}
@@ -125,16 +260,16 @@ export default function ProductPage() {
                     />
                   ))}
                 </div>
-              </div>
+              </div> */}
 
-              {/* Size */}
-              <div className="mb-6">
+              {/* Size - Commented out */}
+              {/* <div className="mb-6">
                 <div className="flex items-center justify-between mb-3">
                   <p className="font-display font-semibold text-sm text-[#1a1a2e] uppercase tracking-wider">Kích cỡ</p>
                   <button className="btn-ghost text-xs">Hướng dẫn chọn size →</button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {product.sizes.map(s => (
+                  {['XS', 'S', 'M', 'L', 'XL', 'XXL'].map(s => (
                     <button
                       key={s}
                       onClick={() => setSelectedSize(s)}
@@ -148,7 +283,7 @@ export default function ProductPage() {
                     </button>
                   ))}
                 </div>
-              </div>
+              </div> */}
 
               {/* Quantity */}
               <div className="flex items-center gap-4 mb-6">
@@ -170,10 +305,15 @@ export default function ProductPage() {
 
               {/* CTA Buttons */}
               <div className="flex gap-3 mb-6">
-                <button className="btn-primary flex-1 justify-center py-4 text-base">
-                  Thêm vào giỏ hàng
+                <button 
+                  onClick={handleAddToCart}
+                  disabled={addingToCart}
+                  className="btn-primary flex-1 justify-center py-4 text-base disabled:opacity-70 disabled:cursor-not-allowed transition-opacity"
+                >
+                  {addingToCart ? 'Đang thêm...' : 'Thêm vào giỏ hàng'}
                 </button>
                 <button
+                  onClick={() => window.location.href = '/checkout'}
                   className="flex-1 py-4 font-display font-bold text-base border-2 border-[#1a1a2e] text-[#1a1a2e] rounded-btn hover:bg-[#1a1a2e] hover:text-white transition-all cursor-pointer bg-transparent"
                 >
                   Mua ngay
@@ -233,16 +373,11 @@ export default function ProductPage() {
             <div className="py-8 max-w-3xl">
               {activeTab === 'description' && (
                 <div className="space-y-4 text-on-surface leading-relaxed font-body">
-                  <p>Áo Blazer Oversize cao cấp được làm từ vải wool blend 70% wool, 30% polyester cao cấp, mang lại cảm giác mềm mại, thoáng khí và giữ form tốt suốt cả ngày.</p>
-                  <p>Thiết kế oversized hiện đại với đường vai rộng tự nhiên, tạo silhouette thanh lịch và phong cách. Phù hợp cho cả phong cách casual lẫn business casual.</p>
-                  <ul className="list-none space-y-2 pl-0">
-                    {['Chất liệu: 70% Wool, 30% Polyester', 'Kiểu dáng: Oversize, dáng suông', 'Cổ áo: Cổ vest lapel', 'Túi: 2 túi hộp phía trước', 'Xuất xứ: Việt Nam'].map(f => (
-                      <li key={f} className="flex items-center gap-2 text-sm">
-                        <span className="w-1.5 h-1.5 bg-primary rounded-full flex-shrink-0" />
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
+                  {product.description ? (
+                    <p>{product.description}</p>
+                  ) : (
+                    <p>Sản phẩm chất lượng cao từ MAISON., thiết kế hiện đại phù hợp với xu hướng thời trang mới nhất.</p>
+                  )}
                 </div>
               )}
               {activeTab === 'reviews' && (
@@ -276,21 +411,12 @@ export default function ProductPage() {
           </div>
         </section>
 
-        {/* Related Products */}
-        <section className="section-gap">
-          <div className="container mx-auto px-8">
-            <div className="flex items-end justify-between mb-8">
-              <div>
-                <p className="section-label mb-2">Gợi ý</p>
-                <h2 className="font-display font-bold text-[#1a1a2e] text-2xl tracking-tight">Sản phẩm liên quan</h2>
-              </div>
-              <Link href="/shop" className="btn-ghost text-sm">Xem thêm →</Link>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              {products.slice(0, 4).map(p => <ProductCard key={p.id} product={p} />)}
-            </div>
+        {/* Toast Notification */}
+        {cartMessage && (
+          <div className="fixed bottom-6 left-6 right-6 md:left-auto md:right-6 md:w-80 bg-green-600 text-white px-4 py-3 rounded-btn shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-300 z-50">
+            <p className="font-body text-sm font-medium">{cartMessage}</p>
           </div>
-        </section>
+        )}
       </main>
       <Footer />
     </>

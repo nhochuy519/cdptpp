@@ -60,7 +60,19 @@ const userSchema = new mongoose.Schema(
     },
     phone: {
       type: String,
-      match: [/^[0-9]{10,11}$/, 'Số điện thoại không hợp lệ'],
+      sparse: true,
+      validate: {
+        validator: function(v: string) {
+          if (!v) return true; // Optional
+          return /^[0-9]{10,11}$/.test(v); // Only digits, 10-11 chars
+        },
+        message: 'Số điện thoại không hợp lệ (phải có 10-11 chữ số)',
+      },
+    },
+    dateOfBirth: Date,
+    gender: {
+      type: String,
+      enum: ['male', 'female', 'other'],
     },
     addresses: [addressSchema],
     avatar: String,

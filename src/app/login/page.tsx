@@ -1,17 +1,31 @@
 "use client";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/app/providers";
 
-export default function LoginPage() {
+function LoginPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState({ email: "", password: "" });
+  const [errors, setErrors] = useState({ email: "", password: "", submit: "" });
+  const { login } = useAuth();
+  const redirectPath = searchParams.get("redirect");
+
+  const getSafeRedirectPath = () => {
+    if (redirectPath && redirectPath.startsWith("/")) {
+      return redirectPath;
+    }
+
+    return "/";
+  };
 
   const validateForm = () => {
-    const newErrors = { email: "", password: "" };
+    const newErrors = { email: "", password: "", submit: "" };
 
     if (!email) {
       newErrors.email = "Email không được để trống";
@@ -35,12 +49,15 @@ export default function LoginPage() {
     if (!validateForm()) return;
 
     setIsLoading(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setIsLoading(false);
-
-    // Redirect to account page on success
-    window.location.href = "/account";
+    try {
+      await login(email, password);
+      router.replace(getSafeRedirectPath());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Đăng nhập thất bại";
+      setErrors((prev) => ({ ...prev, submit: message }));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -99,6 +116,13 @@ export default function LoginPage() {
                 để tiếp tục.
               </p>
             </div>
+
+            {/* Error Message */}
+            {errors.submit && (
+              <div className="mb-6 p-4 bg-error-container/20 border border-error rounded-btn">
+                <p className="text-error text-sm">{errors.submit}</p>
+              </div>
+            )}
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -341,4 +365,12 @@ export default function LoginPage() {
       </div>
     </main>
   );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
+  )
 }

@@ -1,11 +1,69 @@
-import Image from 'next/image'
-import Link from 'next/link'
-import Navbar from '@/components/layout/Navbar'
-import Footer from '@/components/layout/Footer'
-import ProductCard from '@/components/ui/ProductCard'
-import { products, categories, reviews, formatPrice } from '@/lib/data'
 
-export default function HomePage() {
+import Image from 'next/image';
+import Link from 'next/link';
+import Navbar from '@/components/layout/Navbar';
+import Footer from '@/components/layout/Footer';
+import { reviews, formatPrice } from '@/lib/data';
+
+// Fetch categories từ API MongoDB
+async function getCategories() {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+    const url = `${baseUrl}/api/categories?limit=6&random=true`;
+    
+    const res = await fetch(url, { cache: 'no-store' });
+    const data = await res.json();
+    
+    if (data.success && Array.isArray(data.data)) {
+      return data.data;
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+// Fetch top discount products từ API MongoDB
+async function getTopDiscountProducts() {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+    const url = `${baseUrl}/api/products?topDiscount=4`;
+    
+    const res = await fetch(url, { cache: 'no-store' });
+    const data = await res.json();
+    
+    if (data.success && Array.isArray(data.data)) {
+      return data.data;
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+// Fetch 8 newest products từ API MongoDB
+async function getNewestProducts() {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+    const url = `${baseUrl}/api/products?limit=8&sort=newest`;
+    
+    const res = await fetch(url, { cache: 'no-store' });
+    const data = await res.json();
+    
+    if (data.products && Array.isArray(data.products)) {
+      return data.products;
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export default async function HomePage() {
+  const randomCategories = await getCategories();
+  const topDiscountProducts = await getTopDiscountProducts();
+  const newestProducts = await getNewestProducts();
+
   return (
     <>
       <Navbar />
@@ -83,7 +141,7 @@ export default function HomePage() {
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              {categories.map((cat, i) => (
+              {randomCategories.map((cat: any, i: number) => (
                 <Link
                   key={cat.id}
                   href={`/shop?category=${cat.slug}`}
@@ -94,13 +152,14 @@ export default function HomePage() {
                   <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a2e]/80 via-transparent to-transparent group-hover:from-primary/70 transition-all duration-300" />
                   <div className="absolute bottom-0 left-0 right-0 p-4">
                     <p className="font-display font-bold text-white text-sm">{cat.name}</p>
-                    <p className="text-white/60 text-xs font-body">{cat.count} sản phẩm</p>
+                    <p className="text-white/60 text-xs font-body">{cat.count ?? 0} sản phẩm</p>
                   </div>
                 </Link>
               ))}
             </div>
           </div>
         </section>
+        {/* ...existing code... */}
 
         {/* ── FLASH SALE ── */}
         <section className="section-gap">
@@ -127,8 +186,36 @@ export default function HomePage() {
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              {products.filter(p => p.discount > 0).slice(0, 4).map((p) => (
-                <ProductCard key={p.id} product={p} />
+              {topDiscountProducts.map((p: any) => (
+                <Link key={p._id} href={`/product/${p.slug}`} className="group no-underline">
+                  <div className="relative mb-4 overflow-hidden rounded-btn" style={{ aspectRatio: '1' }}>
+                    <Image
+                      src={p.images?.[0]?.url || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&q=80'}
+                      alt={p.name}
+                      fill
+                      className="object-cover transition-transform duration-500 group-hover:scale-110"
+                    />
+                    {p.discountPercent > 0 && (
+                      <div className="absolute top-3 right-3 bg-primary text-white font-display font-bold text-xs px-2.5 py-1 rounded-btn">
+                        -{p.discountPercent}%
+                      </div>
+                    )}
+                  </div>
+                  <p className="font-body text-sm text-on-surface-muted mb-2 group-hover:text-primary transition-colors">
+                    {p.category?.name || 'Sản phẩm'}
+                  </p>
+                  <p className="font-display font-bold text-[#1a1a2e] mb-2 line-clamp-2 group-hover:text-primary transition-colors text-sm">
+                    {p.name}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="font-display font-bold text-primary">
+                      {p.salePrice?.toLocaleString('vi-VN')}₫
+                    </span>
+                    <span className="font-body text-sm text-on-surface-muted line-through">
+                      {p.price?.toLocaleString('vi-VN')}₫
+                    </span>
+                  </div>
+                </Link>
               ))}
             </div>
           </div>
@@ -180,9 +267,44 @@ export default function HomePage() {
               </Link>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-              {products.map((p) => (
-                <ProductCard key={p.id} product={p} />
-              ))}
+              {newestProducts.map((p: any) => {
+                const discountPercent = p.salePrice && p.price 
+                  ? Math.round(((p.price - p.salePrice) / p.price) * 100)
+                  : 0;
+                return (
+                <Link key={p._id} href={`/product/${p.slug}`} className="group no-underline">
+                  <div className="relative mb-4 overflow-hidden rounded-btn" style={{ aspectRatio: '1' }}>
+                    <Image
+                      src={p.images?.[0]?.url || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&q=80'}
+                      alt={p.name}
+                      fill
+                      className="object-cover transition-transform duration-500 group-hover:scale-110"
+                    />
+                    {discountPercent > 0 && (
+                      <div className="absolute top-3 right-3 bg-primary text-white font-display font-bold text-xs px-2.5 py-1 rounded-btn">
+                        -{discountPercent}%
+                      </div>
+                    )}
+                  </div>
+                  <p className="font-body text-sm text-on-surface-muted mb-2 group-hover:text-primary transition-colors">
+                    {p.category?.name || 'Sản phẩm'}
+                  </p>
+                  <p className="font-display font-bold text-[#1a1a2e] mb-2 line-clamp-2 group-hover:text-primary transition-colors text-sm">
+                    {p.name}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="font-display font-bold text-primary">
+                      {p.salePrice ? p.salePrice.toLocaleString('vi-VN') : p.price.toLocaleString('vi-VN')}₫
+                    </span>
+                    {p.salePrice && (
+                      <span className="font-body text-sm text-on-surface-muted line-through">
+                        {p.price.toLocaleString('vi-VN')}₫
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              );
+              })}
             </div>
           </div>
         </section>

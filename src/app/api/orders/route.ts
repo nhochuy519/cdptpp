@@ -13,52 +13,89 @@ export async function POST(req: NextRequest) {
   try {
     await dbConnect();
 
-    const { userId, items, shippingAddress, paymentMethod, couponCode } =
-      await req.json();
+    const body = await req.json();
+    const { 
+      userId, 
+      sessionId,
+      items, 
+      shippingAddress, 
+      paymentMethod,
+      deliveryMethod,
+      customerInfo,
+      couponCode,
+      note
+    } = body;
 
     // Validate required fields
-    if (!userId || !items || !shippingAddress || !paymentMethod) {
+    if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "items must be a non-empty array" },
         { status: 400 },
       );
     }
 
-    // Verify user exists
-    const user = await User.findById(userId);
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    if (!paymentMethod) {
+      return NextResponse.json(
+        { error: "paymentMethod is required" },
+        { status: 400 },
+      );
     }
 
-    // Verify products exist and have sufficient stock
+    // For guest checkout, validate sessionId and customerInfo
+    if (!userId && !sessionId) {
+      return NextResponse.json(
+        { error: "userId or sessionId required" },
+        { status: 400 },
+      );
+    }
+
+    if (!userId && !customerInfo) {
+      return NextResponse.json(
+        { error: "customerInfo required for guest checkout" },
+        { status: 400 },
+      );
+    }
+
+    // Verify user exists if userId provided
+    if (userId) {
+      const user = await User.findById(userId);
+      if (!user) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+    }
+
+    // Verify products exist and validate items
     let subtotal = 0;
     const validatedItems = [];
 
     for (const item of items) {
-      const product = await Product.findById(item.productId);
+      // Skip if item doesn't have productId
+      if (!item.productId) {
+        console.warn("Item missing productId:", item);
+        continue;
+      }
+
+      let product;
+      try {
+        product = await Product.findById(item.productId);
+      } catch (err) {
+        console.error(`Invalid product ID: ${item.productId}`, err);
+        return NextResponse.json(
+          { error: `Invalid product ID: ${item.productId}` },
+          { status: 400 },
+        );
+      }
+
       if (!product) {
         return NextResponse.json(
-          { error: `Product ${item.productId} not found` },
+          { error: `Product not found: ${item.productId}` },
           { status: 404 },
         );
       }
 
-      // Check stock from variant
-      let variant = null;
-      if (item.size && item.color) {
-        variant = product.variants.find(
-          (v: any) => v.size === item.size && v.color === item.color,
-        );
-        if (!variant || variant.stock < item.quantity) {
-          return NextResponse.json(
-            { error: `Insufficient stock for ${product.name}` },
-            { status: 400 },
-          );
-        }
-      }
-
       const itemPrice = item.salePrice || product.salePrice || product.price;
-      const itemSubtotal = itemPrice * item.quantity;
+      const itemQuantity = item.quantity || 1;
+      const itemSubtotal = itemPrice * itemQuantity;
 
       validatedItems.push({
         productId: product._id,
@@ -66,13 +103,20 @@ export async function POST(req: NextRequest) {
         sku: product.sku,
         price: product.price,
         salePrice: product.salePrice,
-        size: item.size,
-        color: item.color,
-        quantity: item.quantity,
+        size: item.size || 'M',
+        color: item.color || '#1a1a2e',
+        quantity: itemQuantity,
         subtotal: itemSubtotal,
       });
 
       subtotal += itemSubtotal;
+    }
+
+    if (validatedItems.length === 0) {
+      return NextResponse.json(
+        { error: "No valid items in cart" },
+        { status: 400 },
+      );
     }
 
     // Validate coupon if provided
@@ -129,16 +173,15 @@ export async function POST(req: NextRequest) {
     const orderNumber = `ORD-${dateStr}-${String(ordersToday + 1).padStart(4, "0")}`;
 
     // Calculate final amount
-    const shippingCost = 30000; // Fixed for now
+    const shippingCost = deliveryMethod === 'express' ? 50000 : 0;
     const taxAmount = 0;
     const totalAmount = subtotal + shippingCost + taxAmount - discountAmount;
 
-    // Create order
-    const order = await Order.create({
+    // Create order data
+    const orderData: any = {
       orderNumber,
-      userId,
       items: validatedItems,
-      shippingAddress,
+      shippingAddress: customerInfo?.address || shippingAddress || 'Not provided',
       paymentMethod,
       couponCode: couponCode?.toUpperCase(),
       discountAmount,
@@ -146,30 +189,52 @@ export async function POST(req: NextRequest) {
       taxAmount,
       subtotal,
       totalAmount,
-      paymentStatus: paymentMethod === "COD" ? "pending" : "pending",
+      paymentStatus: "pending",
       orderStatus: "pending",
-    });
+      note: note || '',
+      orderTimeline: [
+        {
+          status: "pending",
+          timestamp: new Date(),
+          note: "Order created",
+        },
+      ],
+    };
 
-    // Add initial status to timeline
-    order.orderTimeline = [
-      {
-        status: "pending",
-        timestamp: new Date(),
-        note: "Order created",
-      },
-    ];
-    await order.save();
+    // Add userId if provided, otherwise add guest info
+    if (userId) {
+      orderData.userId = userId;
+    } else {
+      orderData.guestInfo = {
+        sessionId,
+        fullName: customerInfo?.fullName || 'Guest',
+        email: customerInfo?.email || '',
+        phone: customerInfo?.phone || '',
+      };
+    }
 
-    await order.populate("userId", "name email phone");
+    // Create order in database
+    const order = await Order.create(orderData);
+
+    if (userId) {
+      await order.populate("userId", "name email phone");
+    }
 
     return NextResponse.json(
-      { message: "Order created successfully", order },
+      { 
+        message: "Order created successfully",
+        data: order
+      },
       { status: 201 },
     );
   } catch (error: any) {
     console.error("Create order error:", error);
+    console.error("Error stack:", error.stack);
     return NextResponse.json(
-      { error: error.message || "Failed to create order" },
+      { 
+        error: error.message || "Failed to create order",
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      },
       { status: 500 },
     );
   }

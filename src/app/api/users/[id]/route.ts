@@ -55,9 +55,8 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid user ID" }, { status: 400 });
     }
 
-    // Don't allow updating certain fields
+    // Don't allow updating the identifier or password
     delete body.password;
-    delete body.role;
     delete body._id;
 
     const user = await User.findByIdAndUpdate(id, body, {
