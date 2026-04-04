@@ -21,6 +21,7 @@ const provinces = [
 const wards = ['Phường 1', 'Phường 2', 'Phường 3', 'Phường 4', 'Phường 5', 'Phường 6', 'Phường 7', 'Phường 8', 'Phường 9', 'Phường 10']
 const paymentMethods = [
   { id: 'cod', label: 'Thanh toán khi nhận hàng (COD)', icon: '🏠' },
+  { id: 'vnpay', label: 'Thanh toán VNPay', icon: '💳' },
   // { id: 'bank', label: 'Chuyển khoản ngân hàng', icon: '🏦' },
   // { id: 'momo', label: 'Ví MoMo', icon: '💜' },
   // { id: 'zalopay', label: 'ZaloPay', icon: '💙' },
@@ -173,7 +174,39 @@ export default function CheckoutPage() {
         console.warn('Failed to clear cart:', err)
       }
 
-      // Redirect to order details page
+      // Handle VNPay payment
+      if (paymentMethod === 'vnpay') {
+        try {
+          const vnpayRes = await fetch('/api/payments/vnpay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderId: orderData.data?.orderNumber,
+              amount: total,
+              orderInfo: `Thanh toan don hang ${orderData.data?.orderNumber}`,
+            }),
+          })
+
+          const vnpayData = await vnpayRes.json()
+
+          if (vnpayData.success && vnpayData.paymentUrl) {
+            // Redirect to VNPay payment page
+            window.location.href = vnpayData.paymentUrl
+            return
+          } else {
+            alert('Không thể tạo link thanh toán VNPay')
+            setIsLoading(false)
+            return
+          }
+        } catch (error) {
+          console.error('VNPay error:', error)
+          alert('Lỗi khi tạo thanh toán VNPay')
+          setIsLoading(false)
+          return
+        }
+      }
+
+      // Redirect to order details page for COD
       router.push(`/order?orderId=${orderData.data?._id}`)
     } catch (error) {
       console.error('Order error:', error)
