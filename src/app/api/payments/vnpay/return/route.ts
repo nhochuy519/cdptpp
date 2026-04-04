@@ -3,6 +3,8 @@ import { createVNPayService } from '@/lib/vnpay';
 import Order from '@/models/Order';
 import connectDB from '@/lib/db/connect';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     // Get all query params

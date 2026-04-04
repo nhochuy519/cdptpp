@@ -14,6 +14,7 @@ interface OrderData {
   status: string
   paymentStatus: string
   total: number
+  totalAmount: number
   items: Array<{
     name: string
     quantity: number

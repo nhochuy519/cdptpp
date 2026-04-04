@@ -169,7 +169,10 @@ const orderSchema = new mongoose.Schema(
     tracking: trackingSchema,
     deliveredAt: Date,
   },
-  { timestamps: true }
+  { 
+    timestamps: true,
+    suppressReservedKeysWarning: true
+  }
 )
 
 // Auto-update timeline
