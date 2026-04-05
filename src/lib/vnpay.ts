@@ -28,9 +28,12 @@ export class VNPayService {
    * Tạo URL thanh toán VNPay
    */
   createPaymentUrl(params: VNPayPaymentParams): string {
-    const date = new Date();
-    const createDate = this.formatDate(date);
-    const expireDate = this.formatDate(new Date(date.getTime() + 15 * 60 * 1000)); // 15 phút
+    // Lấy thời gian theo múi giờ Việt Nam (GMT+7)
+    const now = new Date();
+    const vnTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+    
+    const createDate = this.formatDate(vnTime);
+    const expireDate = this.formatDate(new Date(vnTime.getTime() + 15 * 60 * 1000)); // 15 phút
 
     let vnpParams: Record<string, string> = {
       vnp_Version: '2.1.0',
